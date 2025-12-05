@@ -1,17 +1,79 @@
-import { GoogleGenAI, Type } from "@google/genai";
 import { ClinicalAssessment, Vitals, RiskLevel } from "../types";
 
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+const API_KEY = process.env.API_KEY;
+const API_URL = "https://api.openai.com/v1/chat/completions";
+
+// Helper function to call OpenAI API
+async function callOpenAI(messages: any[], jsonMode: boolean = false, systemInstruction?: string) {
+  if (!API_KEY) {
+    console.error("API Key is missing. Please set process.env.API_KEY");
+    throw new Error("API Key is missing");
+  }
+
+  const finalMessages = [];
+  
+  if (systemInstruction) {
+    finalMessages.push({ role: "system", content: systemInstruction });
+  }
+  
+  finalMessages.push(...messages);
+
+  const body: any = {
+    model: "gpt-4o", // Using gpt-4o for best performance and JSON handling
+    messages: finalMessages,
+    temperature: 0.7,
+  };
+
+  if (jsonMode) {
+    body.response_format = { type: "json_object" };
+  }
+
+  try {
+    const response = await fetch(API_URL, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${API_KEY}`
+      },
+      body: JSON.stringify(body)
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`OpenAI API Error: ${response.status} - ${errorText}`);
+    }
+
+    const data = await response.json();
+    return data.choices[0].message.content;
+  } catch (error) {
+    console.error("OpenAI Request Failed:", error);
+    throw error;
+  }
+}
 
 const CDSS_SYSTEM_INSTRUCTION = `
 You are an expert Medical Officer acting as a Clinical Decision Support System (CDSS) for Barangay Health Workers (BHWs) in the Philippines. 
 BHWs are volunteers with limited training. Your goal is to:
 1. Analyze symptoms and vitals.
 2. Direct the BHW to perform specific, simple physical exam checks to rule out dangerous conditions (e.g., Appendicitis, Dengue, Pneumonia).
-3. Triaging the patient into GREEN (Home Care), YELLOW (Teleconsult/Clinic), or RED (Emergency).
+3. Triaging the patient into GREEN (Home Care), YELLOW (Teleconsult/Clinic), or RED (Emergency Referral).
 4. Provide immediate actionable advice based on DOH Clinical Practice Guidelines.
 
-Always return the response in JSON format.
+IMPORTANT: You must return the response in strict JSON format matching this schema:
+{
+  "riskLevel": "GREEN" | "YELLOW" | "RED",
+  "provisionalClassification": "string",
+  "reasoning": "string",
+  "immediateActions": ["string", "string"],
+  "physicalExamPrompts": [
+    {
+      "id": "string",
+      "prompt": "Instructions for the BHW, e.g. 'Check capillary refill time'",
+      "expectedFinding": "What creates a positive finding, e.g. '> 2 seconds'"
+    }
+  ],
+  "recommendedMedications": ["string"]
+}
 `;
 
 export const assessPatientCondition = async (
@@ -21,7 +83,7 @@ export const assessPatientCondition = async (
   gender: string
 ): Promise<ClinicalAssessment> => {
   
-  const prompt = `
+  const userPrompt = `
     Patient Profile:
     - Age: ${age}
     - Gender: ${gender}
@@ -29,54 +91,20 @@ export const assessPatientCondition = async (
     - Vitals: Temp ${vitals.temp}C, BP ${vitals.bpSystolic}/${vitals.bpDiastolic}, HR ${vitals.pulse}, SpO2 ${vitals.oxygen}%
 
     Provide a clinical assessment, risk classification, and specific physical exam prompts the BHW should check right now.
+    Return JSON only.
   `;
 
   try {
-    const response = await ai.models.generateContent({
-      model: "gemini-2.5-flash",
-      contents: prompt,
-      config: {
-        systemInstruction: CDSS_SYSTEM_INSTRUCTION,
-        responseMimeType: "application/json",
-        responseSchema: {
-          type: Type.OBJECT,
-          properties: {
-            riskLevel: { type: Type.STRING, enum: [RiskLevel.GREEN, RiskLevel.YELLOW, RiskLevel.RED] },
-            provisionalClassification: { type: Type.STRING },
-            reasoning: { type: Type.STRING },
-            immediateActions: { 
-              type: Type.ARRAY, 
-              items: { type: Type.STRING } 
-            },
-            physicalExamPrompts: {
-              type: Type.ARRAY,
-              items: {
-                type: Type.OBJECT,
-                properties: {
-                  id: { type: Type.STRING },
-                  prompt: { type: Type.STRING, description: "Instructions for the BHW, e.g. 'Check capillary refill time'" },
-                  expectedFinding: { type: Type.STRING, description: "What creates a positive finding, e.g. '> 2 seconds'" }
-                },
-                required: ["id", "prompt", "expectedFinding"]
-              }
-            },
-            recommendedMedications: {
-              type: Type.ARRAY,
-              items: { type: Type.STRING }
-            }
-          },
-          required: ["riskLevel", "provisionalClassification", "reasoning", "immediateActions", "physicalExamPrompts"]
-        }
-      }
-    });
+    const jsonString = await callOpenAI(
+      [{ role: "user", content: userPrompt }],
+      true, // JSON Mode
+      CDSS_SYSTEM_INSTRUCTION
+    );
 
-    const text = response.text;
-    if (!text) throw new Error("No response from AI");
-    
-    return JSON.parse(text) as ClinicalAssessment;
+    return JSON.parse(jsonString) as ClinicalAssessment;
 
   } catch (error) {
-    console.error("Gemini CDSS Error:", error);
+    console.error("CDSS Service Error:", error);
     // Fallback safe mode
     return {
       riskLevel: RiskLevel.YELLOW,
@@ -90,27 +118,27 @@ export const assessPatientCondition = async (
 };
 
 export const chatWithAgapay = async (userMessage: string, history: {role: string, text: string}[]) => {
+  // Map internal role 'model' to OpenAI 'assistant'
   const chatHistory = history.map(h => ({
-    role: h.role,
-    parts: [{ text: h.text }]
+    role: h.role === 'model' ? 'assistant' : 'user',
+    content: h.text
   }));
 
-  try {
-    const chat = ai.chats.create({
-      model: "gemini-2.5-flash",
-      history: chatHistory,
-      config: {
-        systemInstruction: `You are "Agapay", a friendly health assistant for Filipino citizens. 
-        - Speak in "Taglish" (Tagalog-English mix) to be relatable and clear.
-        - You are NOT a doctor. Do not diagnose.
-        - If symptoms sound mild (Green risk), give home remedies (hydration, rest, herbal tea).
-        - If symptoms sound serious (chest pain, difficulty breathing, high fever > 3 days), URGENTLY tell them to go to the Barangay Health Center or Hospital.
-        - Keep answers short (under 50 words).`
-      }
-    });
+  const systemInstruction = `You are "Agapay", a friendly health assistant for Filipino citizens. 
+  - Speak in "Taglish" (Tagalog-English mix) to be relatable and clear.
+  - You are NOT a doctor. Do not diagnose.
+  - If symptoms sound mild (Green risk), give home remedies (hydration, rest, herbal tea).
+  - If symptoms sound serious (chest pain, difficulty breathing, high fever > 3 days), URGENTLY tell them to go to the Barangay Health Center or Hospital.
+  - Keep answers short (under 50 words).`;
 
-    const result = await chat.sendMessage({ message: userMessage });
-    return result.text;
+  try {
+    const messages = [
+      ...chatHistory,
+      { role: "user", content: userMessage }
+    ];
+
+    const responseText = await callOpenAI(messages, false, systemInstruction);
+    return responseText;
   } catch (error) {
     console.error("Citizen Chat Error:", error);
     return "Pasensya na, hindi ako makakonekta sa server ngayon. Mangyaring pumunta sa Health Center kung masama ang pakiramdam.";
@@ -135,15 +163,15 @@ export const generateLogisticsIntel = async (inventoryData: any, syndromicTrend:
       4. Format the output as a clean Markdown Executive Summary.
     `;
 
-    const response = await ai.models.generateContent({
-      model: "gemini-2.5-flash",
-      contents: prompt,
-      config: {
-        systemInstruction: "You are an expert Public Health Logistics Officer using predictive analytics to prevent shortages."
-      }
-    });
+    const systemInstruction = "You are an expert Public Health Logistics Officer using predictive analytics to prevent shortages.";
+    
+    const responseText = await callOpenAI(
+      [{ role: "user", content: prompt }],
+      false,
+      systemInstruction
+    );
 
-    return response.text;
+    return responseText;
   } catch (error) {
     console.error("Admin Analytics Error:", error);
     return "Unable to generate intelligence report at this time.";

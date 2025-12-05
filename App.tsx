@@ -61,7 +61,7 @@ const LandingPage: React.FC = () => {
         </div>
         
         <div className="mt-12 text-center">
-            <p className="text-white/30 text-xs">Powered by Gemini 2.5 Flash • DOH Guideline Compliant • Offline-First Architecture</p>
+            <p className="text-white/30 text-xs">Powered by OpenAI GPT-4o • DOH Guideline Compliant • Offline-First Architecture</p>
         </div>
       </div>
     </div>

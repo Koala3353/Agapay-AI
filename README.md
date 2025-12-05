@@ -12,7 +12,7 @@ In the Philippines, the Barangay Health Center is the first line of defense, but
 
 ### 1. The BHW Interface ("Clinical Co-Pilot")
 *Target User: Barangay Health Workers (Volunteers)*
-*   **AI-Driven CDSS:** Uses **Gemini 2.5 Flash** to analyze symptoms and vitals, guiding BHWs through physical exams (e.g., "Check for McBurney's Point tenderness").
+*   **AI-Driven CDSS:** Uses **OpenAI GPT-4o** to analyze symptoms and vitals, guiding BHWs through physical exams (e.g., "Check for McBurney's Point tenderness").
 *   **Risk Stratification:** Automatically categorizes patients into GREEN (Home Care), YELLOW (Teleconsult), or RED (Emergency Referral).
 *   **Offline-First Records:** Saves patient data to local storage, packetized for eventual sync via "Agapay Mesh" (Bluetooth/Network).
 *   **Digital Referral Ticket:** Generates a QR code containing the full triage history for hospital ERs to scan.
@@ -34,7 +34,7 @@ In the Philippines, the Barangay Health Center is the first line of defense, but
 ## 🛠️ Tech Stack
 
 *   **Frontend:** React 19 (TypeScript), Tailwind CSS
-*   **AI Model:** Google Gemini API (`gemini-2.5-flash`) via `@google/genai` SDK
+*   **AI Model:** OpenAI API (`gpt-4o`) via REST/Fetch
 *   **Routing:** React Router (MemoryRouter for sandbox compatibility)
 *   **Visualization:** Recharts for data analytics
 *   **Icons:** Lucide React
@@ -56,9 +56,9 @@ In the Philippines, the Barangay Health Center is the first line of defense, but
     ```
 
 3.  **Configure API Key**
-    Create a `.env` file in the root directory and add your Google Gemini API key:
+    Create a `.env` file in the root directory and add your OpenAI API key:
     ```env
-    API_KEY=your_google_genai_api_key_here
+    API_KEY=your_openai_api_key_here
     ```
 
 4.  **Run the Application**
@@ -70,9 +70,9 @@ In the Philippines, the Barangay Health Center is the first line of defense, but
 
 ## 🤖 AI Features Implementation
 
-*   **Clinical Assessment:** The BHW module sends structured prompts including age, gender, and vitals to Gemini to receive a JSON response containing risk levels and specific physical exam instructions.
+*   **Clinical Assessment:** The BHW module sends structured prompts including age, gender, and vitals to OpenAI (JSON Mode) to receive a response containing risk levels and specific physical exam instructions.
 *   **Taglish Chat:** The Citizen module uses a specific system instruction to ensure the AI speaks in a relatable mix of Tagalog and English and strictly adheres to non-diagnostic safety rails.
-*   **Logistics Intelligence:** The Admin module feeds raw JSON inventory data into Gemini to generate text-based strategic insights.
+*   **Logistics Intelligence:** The Admin module feeds raw JSON inventory data into GPT-4o to generate text-based strategic insights.
 
 ---
 
