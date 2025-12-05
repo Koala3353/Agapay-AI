@@ -1,0 +1,5 @@
+{
+  "name": "Agapay AI",
+  "description": "A Distributed Clinical Operating System for the Philippines. Bridges the gap between Barangay Health Centers and City Health Offices using AI-driven CDSS, offline-first data packets, and predictive supply chain management.",
+  "requestFramePermissions": []
+}
